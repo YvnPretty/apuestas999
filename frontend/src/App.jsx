@@ -1,37 +1,58 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, Wallet, MessageSquare, Shield, Info, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, Wallet, MessageSquare, Shield, Info, ArrowUpRight, ArrowDownRight, PlusCircle } from 'lucide-react';
 
 const App = () => {
     const [market, setMarket] = useState(null);
+    const [markets, setMarkets] = useState([]);
     const [userId, setUserId] = useState('Cartman');
     const [amount, setAmount] = useState(10);
     const [price, setPrice] = useState(0.5);
+    const [newQuestion, setNewQuestion] = useState('');
     const [ws, setWs] = useState(null);
 
     useEffect(() => {
         const socket = new WebSocket('ws://localhost:3001');
 
-        socket.onopen = () => {
-            console.log('Connected to WebSocket');
-        };
-
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'UPDATE_MARKET' || data.type === 'MARKET_RESOLVED') {
-                setMarket(data.market);
+                setMarkets(prev => prev.map(m => m.id === data.market.id ? data.market : m));
+                if (market && market.id === data.market.id) {
+                    setMarket(data.market);
+                }
+            }
+            if (data.type === 'NEW_MARKET') {
+                setMarkets(prev => {
+                    if (prev.find(m => m.id === data.market.id)) return prev;
+                    return [...prev, data.market];
+                });
             }
         };
 
         setWs(socket);
 
-        // Initial fetch
         fetch('http://localhost:3001/api/markets')
             .then(res => res.json())
-            .then(data => setMarket(data[0]));
+            .then(data => {
+                setMarkets(data);
+                if (data.length > 0) setMarket(data[0]);
+            });
 
         return () => socket.close();
-    }, []);
+    }, [market?.id]);
+
+    const handleCreateMarket = async () => {
+        if (!newQuestion) return;
+        const res = await fetch('http://localhost:3001/api/markets/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: newQuestion })
+        });
+        const data = await res.json();
+        setMarket(data.market);
+        setNewQuestion('');
+    };
 
     const handleTrade = async (type, side) => {
         await fetch('http://localhost:3001/api/order', {
@@ -67,35 +88,64 @@ const App = () => {
         }));
     }, [market]);
 
-    if (!market) return <div className="container">Cargando mercado...</div>;
+    if (!market) return <div className="container">Cargando mercados...</div>;
 
     const user = market.users[userId] || { balance: 0, position: 0 };
 
     return (
         <div className="container">
-            <header style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
+            <header style={{ marginBottom: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1 }}>
                     <div className="label">Prediction Market</div>
                     <h1>{market.question}</h1>
                 </div>
-                <div className="glass" style={{ padding: '15px 25px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <Wallet size={20} color="#00f2ff" />
-                    <div>
-                        <div className="label">Tu Saldo</div>
-                        <div style={{ fontSize: '1.2rem', fontWeight: '800' }}>${user.balance.toFixed(2)}</div>
+
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    <div className="glass" style={{ padding: '10px 20px' }}>
+                        <div className="label">Seleccionar Mercado</div>
+                        <select
+                            value={market.id}
+                            onChange={(e) => setMarket(markets.find(m => m.id === e.target.value))}
+                            style={{ background: 'transparent', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer', fontSize: '1rem' }}
+                        >
+                            {markets.map(m => <option key={m.id} value={m.id}>{m.question}</option>)}
+                        </select>
                     </div>
-                    <select
-                        value={userId}
-                        onChange={(e) => setUserId(e.target.value)}
-                        style={{ background: 'transparent', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer' }}
-                    >
-                        {Object.keys(market.users).map(u => <option key={u} value={u}>{u}</option>)}
-                    </select>
+
+                    <div className="glass" style={{ padding: '15px 25px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <Wallet size={20} color="#00f2ff" />
+                        <div>
+                            <div className="label">Tu Saldo ({userId})</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: '800' }}>${user.balance.toFixed(2)}</div>
+                        </div>
+                        <select
+                            value={userId}
+                            onChange={(e) => setUserId(e.target.value)}
+                            style={{ background: 'transparent', color: 'white', border: 'none', fontWeight: '600', cursor: 'pointer', marginLeft: '10px' }}
+                        >
+                            {Object.keys(market.users).map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                    </div>
                 </div>
             </header>
 
             <div className="grid">
                 <div className="main-col">
+                    <div className="glass card" style={{ marginBottom: '30px' }}>
+                        <div className="label" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <PlusCircle size={16} /> ✨ Crear Nueva Encuesta
+                        </div>
+                        <div style={{ display: 'flex', gap: '15px', marginTop: '15px' }}>
+                            <input
+                                placeholder="Ej: ¿Lloverá mañana en CDMX?"
+                                value={newQuestion}
+                                onChange={(e) => setNewQuestion(e.target.value)}
+                                style={{ flex: 1 }}
+                            />
+                            <button className="btn btn-primary" onClick={handleCreateMarket}>Crear</button>
+                        </div>
+                    </div>
+
                     <div className="glass card" style={{ height: '400px' }}>
                         <div className="label">Probabilidades en Vivo</div>
                         <ResponsiveContainer width="100%" height="100%">
@@ -118,7 +168,7 @@ const App = () => {
                         </ResponsiveContainer>
                     </div>
 
-                    <div className="glass card">
+                    <div className="glass card" style={{ marginTop: '30px' }}>
                         <div className="label">Historial de Transacciones</div>
                         <div style={{ marginTop: '20px' }}>
                             {market.trades.slice().reverse().map((trade, i) => (

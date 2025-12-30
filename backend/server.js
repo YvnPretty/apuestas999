@@ -128,6 +128,28 @@ app.get('/api/markets', (req, res) => {
     res.json(Object.values(markets));
 });
 
+app.post('/api/markets/create', (req, res) => {
+    const { question } = req.body;
+    const id = question.toLowerCase().replace(/ /g, '-').replace(/[?¿!¡]/g, '') + '-' + Date.now();
+
+    markets[id] = {
+        id: id,
+        question: question,
+        bids: [],
+        asks: [],
+        trades: [],
+        users: {
+            'Cartman': { balance: 1000, position: 0 },
+            'Stan': { balance: 1000, position: 0 },
+            'Kenny': { balance: 1000, position: 0 },
+            'Butters': { balance: 1000, position: 0 }
+        }
+    };
+
+    broadcast({ type: 'NEW_MARKET', market: markets[id] });
+    res.json({ status: 'success', market: markets[id] });
+});
+
 app.post('/api/order', (req, res) => {
     const { marketId, userId, type, side, price, amount } = req.body;
     const order = new Order(userId, type, side, price, amount);
